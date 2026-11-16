@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="de" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>ProSport Live-Ticker</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/857/857418.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        body { background-color: #090d16; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+        .landscape-fullscreen {
+            position: fixed !important;
+            top: 0 !important; left: 0 !important;
+            width: 100vh !important; height: 100vw !important;
+            transform: rotate(90deg) translateY(-100%) !important;
+            transform-origin: top left !important;
+            z-index: 9999 !important;
+        }
+        @media (orientation: landscape) {
+            .landscape-fullscreen {
+                width: 100vw !important; height: 100vh !important;
+                transform: none !important;
+            }
+        }
+    </style>
+</head>
+<body class="text-white min-h-screen font-sans select-none antialiased">
+
+    <!-- Header -->
+    <header class="sticky top-0 z-40 bg-[#0f1623]/95 backdrop-blur-md border-b border-slate-800 px-4 py-3 flex justify-between items-center">
+        <div class="flex items-center space-x-2">
+            <span class="text-xl">⚡</span>
+            <h1 class="font-extrabold text-base tracking-wider">PRO<span class="text-blue-500">TICKER</span></h1>
+        </div>
+        <div class="flex items-center space-x-2">
+            <button onclick="openPushSetup()" class="bg-blue-600/20 text-blue-400 border border-blue-500/30 px-2.5 py-1 rounded-lg text-[11px] font-bold">
+                🔔 iPhone Push
+            </button>
+            <div class="flex items-center space-x-1.5 bg-slate-900 px-2 py-1 rounded-full border border-slate-800">
+                <span class="relative flex h-2 w-2">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span id="countdown" class="text-[10px] font-mono text-slate-300">5s</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Ligen-Leiste -->
+    <nav id="league-nav" class="bg-[#0b101b] border-b border-slate-800 px-3 py-2.5 overflow-x-auto no-scrollbar flex space-x-2 whitespace-nowrap"></nav>
+
+    <!-- Hauptbereich -->
+    <main class="p-3 max-w-2xl mx-auto space-y-3 pb-24">
+        <div class="flex bg-slate-900/90 p-1 rounded-xl border border-slate-800">
+            <button onclick="switchTab('matches')" id="tab-matches" class="flex-1 py-2 text-xs font-bold rounded-lg bg-blue-600 text-white transition">Live & Spiele</button>
+            <button onclick="switchTab('standings')" id="tab-standings" class="flex-1 py-2 text-xs font-bold rounded-lg text-slate-400 transition">Live Tabellen</button>
+        </div>
+
+        <div id="matches-container" class="space-y-3"></div>
+        <div id="standings-container" class="hidden space-y-3"></div>
+    </main>
+
+    <!-- iPhone Push Setup Modal -->
+    <div id="push-setup-modal" class="fixed inset-0 bg-black/90 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-[#111827] border border-slate-700 rounded-2xl p-5 max-w-md w-full space-y-4">
+            <div class="flex justify-between items-center">
+                <h2 class="font-bold text-base">iPhone Hintergrund-Push einrichten</h2>
+                <button onclick="closePushSetup()" class="text-slate-400 text-lg">✕</button>
+            </div>
+            <p class="text-xs text-slate-300 leading-relaxed">
+                1. Stelle sicher, dass du diese App über das <b>Home-Bildschirm-Icon</b> geöffnet hast.<br>
+                2. Tippe auf <b>Push aktivieren</b> und erlaube Mitteilungen.<br>
+                3. Kopiere den generierten Schlüssel und füge ihn bei Vercel unter <code>IPHONE_PUSH_SUBSCRIPTION</code> ein.
+            </p>
+            <button onclick="activateIphonePush()" class="w-full py-2.5 bg-blue-600 hover:bg-blue-500 rounded-xl font-bold text-xs">
+                1. Push auf diesem iPhone aktivieren
+            </button>
+            <div id="token-box" class="hidden space-y-2">
+                <textarea id="push-token-output" readonly rows="4" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-[10px] font-mono text-emerald-400"></textarea>
+                <button onclick="copyPushToken()" class="w-full py-2 bg-emerald-600 rounded-xl font-bold text-xs">
+                    2. Schlüssel in Zwischenablage kopieren
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Play-by-Play Vollbild / Querformat Modal -->
+    <div id="pbp-modal" class="fixed inset-0 bg-[#090d16] z-50 hidden flex flex-col">
+        <div class="bg-[#0f1623] px-4 py-3 border-b border-slate-800 flex justify-between items-center">
+            <div class="flex items-center space-x-2 truncate pr-2">
+                <span id="modal-status" class="text-[10px] font-bold bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded">LIVE</span>
+                <h3 id="modal-title" class="font-bold text-xs truncate">Spiel-Ticker</h3>
+            </div>
+            <div class="flex items-center space-x-2 shrink-0">
+                <button onclick="toggleLandscape()" id="landscape-btn" class="bg-blue-600/20 text-blue-400 border border-blue-500/30 px-2.5 py-1.5 rounded-lg text-xs font-bold">
+                    ⤢ Querformat
+                </button>
+                <button onclick="closeModal()" class="bg-slate-800 px-2.5 py-1.5 rounded-lg text-xs font-bold">✕</button>
+            </div>
+        </div>
+
+        <div class="bg-slate-950 px-4 py-2 border-b border-slate-800 flex items-center justify-between text-xs">
+            <span class="text-slate-400">🔔 Push-Filter für dieses Spiel:</span>
+            <select id="modal-push-select" onchange="changeGamePush()" class="bg-slate-800 text-white px-2.5 py-1 rounded-lg border border-slate-700 text-xs">
+                <option value="none">Aus</option>
+                <option value="scores">Nur Tore / Punkte</option>
+                <option value="key">Wichtige Events (Karten / Strafen)</option>
+                <option value="all">Volles Play-by-Play</option>
+            </select>
+        </div>
+
+        <div id="modal-scoreboard" class="bg-[#0d1320] px-4 py-3 border-b border-slate-800 flex justify-around items-center"></div>
+
+        <div id="pbp-feed" class="flex-1 overflow-y-auto p-3 space-y-2.5"></div>
+    </div>
+
+    <script>
+        // HIER DEINEN PUBLIC KEY VON VAPIDKEYS.COM EINTRAGEN:
+        const PUBLIC_VAPID_KEY = 'BB94a0RfVu9aCOZJaD1oqH8hS500XVPwjEKkZTBk7yAn-GFHpsgDqo9HhFo-8WIvFAcelMEBDZuUQ4zZn-zTDIw';
+
+        const LEAGUES = [
+            { id: 'NFL', name: 'NFL', sport: 'football', slug: 'nfl' },
+            { id: 'NBA', name: 'NBA', sport: 'basketball', slug: 'nba' },
+            { id: 'NHL', name: 'NHL', sport: 'hockey', slug: 'nhl' },
+            { id: 'MLB', name: 'MLB', sport: 'baseball', slug: 'mlb' },
+            { id: 'NCAAF', name: 'NCAA Football', sport: 'football', slug: 'college-football' },
+            { id: 'BUNDESLIGA', name: '1. Bundesliga', sport: 'soccer', slug: 'ger.1' },
+            { id: 'BL2', name: '2. Bundesliga', sport: 'soccer', slug: 'ger.2' },
+            { id: 'DFB', name: 'DFB-Pokal', sport: 'soccer', slug: 'ger.dfb_pokal' },
+            { id: 'PREMIER', name: 'Premier League', sport: 'soccer', slug: 'eng.1' },
+            { id: 'LALIGA', name: 'La Liga', sport: 'soccer', slug: 'esp.1' },
+            { id: 'SERIEA', name: 'Serie A', sport: 'soccer', slug: 'ita.1' },
+            { id: 'UCL', name: 'Champions League', sport: 'soccer', slug: 'uefa.champions' },
+            { id: 'UEL', name: 'Europa League', sport: 'soccer', slug: 'uefa.europa' },
+            { id: 'UECL', name: 'Conference League', sport: 'soccer', slug: 'uefa.europa.conf' },
+            { id: 'UNL', name: 'Nations League', sport: 'soccer', slug: 'uefa.nations' }
+        ];
+
+        let selectedLeague = LEAGUES[0];
+        let currentTab = 'matches';
+        let pushPrefs = JSON.parse(localStorage.getItem('pushPrefs') || '{}');
+        let activeEvent = null;
+        let isLandscape = false;
+        let secondsLeft = 5;
+
+        function renderNav() {
+            const nav = document.getElementById('league-nav');
+            nav.innerHTML = LEAGUES.map(l => `
+                <button onclick="selectLeague('${l.id}')" class="px-3 py-1.5 rounded-full text-xs font-bold transition ${selectedLeague.id === l.id ? 'bg-blue-600 text-white' : 'bg-slate-800/80 text-slate-300'}">
+                    ${l.name}
+                </button>
+            `).join('');
+        }
+
+        function selectLeague(id) {
+            selectedLeague = LEAGUES.find(l => l.id === id);
+            renderNav();
+            loadData();
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            document.getElementById('matches-container').classList.toggle('hidden', tab !== 'matches');
+            document.getElementById('standings-container').classList.toggle('hidden', tab !== 'standings');
+            document.getElementById('tab-matches').className = `flex-1 py-2 text-xs font-bold rounded-lg transition ${tab === 'matches' ? 'bg-blue-600 text-white' : 'text-slate-400'}`;
+            document.getElementById('tab-standings').className = `flex-1 py-2 text-xs font-bold rounded-lg transition ${tab === 'standings' ? 'bg-blue-600 text-white' : 'text-slate-400'}`;
+            loadData();
+        }
+
+        async function loadData() {
+            if (currentTab === 'matches') {
+                await fetchScoreboard();
+            } else {
+                await fetchStandings();
+            }
+            if (activeEvent) {
+                await fetchPlayByPlay(activeEvent);
+            }
+        }
+
+        async function fetchScoreboard() {
+            const container = document.getElementById('matches-container');
+            try {
+                const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/${selectedLeague.sport}/${selectedLeague.slug}/scoreboard`);
+                const data = await res.json();
+                const events = data.events || [];
+
+                if (events.length === 0) {
+                    container.innerHTML = `<div class="bg-[#111827] border border-slate-800 rounded-2xl p-6 text-center text-slate-400 text-xs">Aktuell keine Spiele in ${selectedLeague.name} angesetzt.</div>`;
+                    return;
+                }
+
+                container.innerHTML = events.map(ev => {
+                    const comp = ev.competitions[0];
+                    const home = comp.competitors.find(c => c.homeAway === 'home') || comp.competitors[0];
+                    const away = comp.competitors.find(c => c.homeAway === 'away') || comp.competitors[1];
+                    const isLive = ev.status?.type?.state === 'in';
+                    const pushMode = pushPrefs[ev.id] || 'none';
+
+                    return `
+                        <div class="bg-[#111827] border ${isLive ? 'border-emerald-500/40' : 'border-slate-800'} rounded-2xl p-3.5 shadow-md">
+                            <div class="flex justify-between items-center text-[11px] mb-2.5">
+                                <span class="font-bold text-blue-400">${selectedLeague.name}</span>
+                                <span class="px-2 py-0.5 rounded-full font-semibold ${isLive ? 'bg-emerald-500/20 text-emerald-400 animate-pulse' : 'bg-slate-800 text-slate-400'}">
+                                    ${ev.status?.type?.shortDetail || ''}
+                                </span>
+                            </div>
+                            <div onclick='openMatchModal(${JSON.stringify({id: ev.id, name: ev.shortName, status: ev.status?.type?.shortDetail, home: {name: home.team.displayName, logo: home.team.logo, score: home.score}, away: {name: away.team.displayName, logo: away.team.logo, score: away.score}}).replace(/'/g, "&apos;")})' class="space-y-2.5 cursor-pointer">
+                                <div class="flex justify-between items-center">
+                                    <div class="flex items-center space-x-2.5">
+                                        <img src="${home.team.logo}" class="w-6 h-6 object-contain" onerror="this.style.display='none'">
+                                        <span class="font-semibold text-sm">${home.team.displayName}</span>
+                                    </div>
+                                    <span class="font-mono text-lg font-extrabold">${home.score ?? '-'}</span>
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <div class="flex items-center space-x-2.5">
+                                        <img src="${away.team.logo}" class="w-6 h-6 object-contain" onerror="this.style.display='none'">
+                                        <span class="font-semibold text-sm">${away.team.displayName}</span>
+                                    </div>
+                                    <span class="font-mono text-lg font-extrabold">${away.score ?? '-'}</span>
+                                </div>
+                            </div>
+                            <div class="mt-3 pt-2.5 border-t border-slate-800/80 flex justify-between items-center">
+                                <span class="text-[11px] text-slate-400">Tippen für Play-by-Play</span>
+                                <button onclick="toggleQuickPush('${ev.id}')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${pushMode !== 'none' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">
+                                    ${pushMode !== 'none' ? '🔔 Push Aktiv' : '🔕 Push Aus'}
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (e) {
+                container.innerHTML = `<div class="text-center text-xs text-red-400 p-4">Fehler beim Laden der Live-Daten.</div>`;
+            }
+        }
+
+        async function fetchStandings() {
+            const container = document.getElementById('standings-container');
+            try {
+                const res = await fetch(`https://site.api.espn.com/apis/v2/sports/${selectedLeague.sport}/${selectedLeague.slug}/standings`);
+                const data = await res.json();
+                const entries = data.children?.[0]?.standings?.entries || data.standings?.entries || [];
+
+                if (entries.length === 0) {
+                    container.innerHTML = `<div class="bg-[#111827] border border-slate-800 rounded-2xl p-6 text-center text-slate-400 text-xs">Für ${selectedLeague.name} ist aktuell keine Tabelle verfügbar (z. B. Pokal-Wettbewerb).</div>`;
+                    return;
+                }
+
+                container.innerHTML = `
+                    <div class="bg-[#111827] border border-slate-800 rounded-2xl overflow-hidden">
+                        <div class="px-4 py-2.5 bg-slate-900 border-b border-slate-800 font-bold text-xs text-blue-400">
+                            ${selectedLeague.name} – Live Tabelle
+                        </div>
+                        <table class="w-full text-xs text-left">
+                            <thead class="text-slate-400 border-b border-slate-800 bg-slate-950/50">
+                                <tr><th class="py-2 pl-3">#</th><th class="py-2">Team</th><th class="py-2 text-center">Sp</th><th class="py-2 pr-3 text-right">Pkt / Bilanz</th></tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-800/60">
+                                ${entries.map((entry, idx) => {
+                                    const team = entry.team;
+                                    const games = entry.stats?.find(s => s.name === 'gamesPlayed')?.displayValue || '-';
+                                    const pts = entry.stats?.find(s => s.name === 'points')?.displayValue || entry.stats?.find(s => s.name === 'overall')?.displayValue || '-';
+                                    return `
+                                        <tr>
+                                            <td class="py-2.5 pl-3 font-mono text-slate-400">${idx + 1}</td>
+                                            <td class="py-2.5 flex items-center space-x-2">
+                                                <img src="${team.logos?.[0]?.href || ''}" class="w-5 h-5 object-contain" onerror="this.style.display='none'">
+                                                <span class="font-semibold truncate max-w-[160px]">${team.displayName}</span>
+                                            </td>
+                                            <td class="py-2.5 text-center font-mono text-slate-300">${games}</td>
+                                            <td class="py-2.5 pr-3 text-right font-mono font-bold text-white">${pts}</td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            } catch (e) {
+                container.innerHTML = `<div class="text-center text-xs text-slate-400 p-4">Tabelle wird geladen...</div>`;
+            }
+        }
+
+        function toggleQuickPush(eventId) {
+            pushPrefs[eventId] = (pushPrefs[eventId] && pushPrefs[eventId] !== 'none') ? 'none' : 'all';
+            localStorage.setItem('pushPrefs', JSON.stringify(pushPrefs));
+            fetchScoreboard();
+        }
+
+        function openMatchModal(ev) {
+            activeEvent = ev;
+            document.getElementById('modal-title').innerText = ev.name;
+            document.getElementById('modal-status').innerText = ev.status;
+            document.getElementById('modal-push-select').value = pushPrefs[ev.id] || 'none';
+            document.getElementById('modal-scoreboard').innerHTML = `
+                <div class="flex items-center space-x-2">
+                    <img src="${ev.home.logo}" class="w-8 h-8 object-contain">
+                    <span class="font-bold text-sm">${ev.home.score ?? 0}</span>
+                </div>
+                <span class="text-xs text-slate-500 font-bold">VS</span>
+                <div class="flex items-center space-x-2">
+                    <span class="font-bold text-sm">${ev.away.score ?? 0}</span>
+                    <img src="${ev.away.logo}" class="w-8 h-8 object-contain">
+                </div>
+            `;
+            document.getElementById('pbp-modal').classList.remove('hidden');
+            fetchPlayByPlay(ev);
+        }
+
+        async function fetchPlayByPlay(ev) {
+            const feed = document.getElementById('pbp-feed');
+            try {
+                const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/${selectedLeague.sport}/${selectedLeague.slug}/summary?event=${ev.id}`);
+                const data = await res.json();
+
+                let plays = [];
+                if (data.plays) plays = data.plays.slice().reverse();
+                else if (data.drives?.current?.plays) plays = data.drives.current.plays.slice().reverse();
+                else if (data.commentary) plays = data.commentary.slice().reverse();
+                else if (data.keyEvents) plays = data.keyEvents.slice().reverse();
+
+                if (plays.length === 0) {
+                    feed.innerHTML = `<div class="text-center text-xs text-slate-400 py-8">Noch keine Play-by-Play-Daten für dieses Spiel vorhanden.</div>`;
+                    return;
+                }
+
+                feed.innerHTML = plays.map(p => `
+                    <div class="bg-[#111827] border border-slate-800 p-3 rounded-xl flex items-start space-x-3">
+                        <span class="text-[11px] font-mono text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded shrink-0">
+                            ${p.clock?.displayValue || p.time?.displayValue || 'Live'}
+                        </span>
+                        <p class="text-xs text-slate-200 leading-relaxed">${p.text || p.shortText || ''}</p>
+                    </div>
+                `).join('');
+            } catch (e) {
+                feed.innerHTML = `<div class="text-center text-xs text-slate-400 py-4">Lade Ticker...</div>`;
+            }
+        }
+
+        function changeGamePush() {
+            if (!activeEvent) return;
+            pushPrefs[activeEvent.id] = document.getElementById('modal-push-select').value;
+            localStorage.setItem('pushPrefs', JSON.stringify(pushPrefs));
+            fetchScoreboard();
+        }
+
+        function closeModal() {
+            activeEvent = null;
+            isLandscape = false;
+            document.getElementById('pbp-modal').classList.remove('landscape-fullscreen');
+            document.getElementById('pbp-modal').classList.add('hidden');
+        }
+
+        function toggleLandscape() {
+            isLandscape = !isLandscape;
+            document.getElementById('pbp-modal').classList.toggle('landscape-fullscreen', isLandscape);
+        }
+
+        function openPushSetup() { document.getElementById('push-setup-modal').classList.remove('hidden'); }
+        function closePushSetup() { document.getElementById('push-setup-modal').classList.add('hidden'); }
+
+        function urlBase64ToUint8Array(base64String) {
+            const padding = '='.repeat((4 - base64String.length % 4) % 4);
+            const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+            const rawData = window.atob(base64);
+            return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
+        }
+
+        async function activateIphonePush() {
+            try {
+                if (!('serviceWorker' in navigator)) {
+                    alert('Bitte öffne diese App zuerst über dein Home-Bildschirm-Icon!');
+                    return;
+                }
+                const reg = await navigator.serviceWorker.register('/sw.js');
+                const permission = await Notification.requestPermission();
+                if (permission !== 'granted') {
+                    alert('Mitteilungen wurden nicht erlaubt.');
+                    return;
+                }
+                const sub = await reg.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
+                });
+                document.getElementById('push-token-output').value = JSON.stringify(sub);
+                document.getElementById('token-box').classList.remove('hidden');
+            } catch (err) {
+                alert('Fehler: ' + err.message + '\n(Hast du deinen Public VAPID Key eingetragen und die App vom Home-Bildschirm gestartet?)');
+            }
+        }
+
+        function copyPushToken() {
+            const textarea = document.getElementById('push-token-output');
+            textarea.select();
+            navigator.clipboard.writeText(textarea.value);
+            alert('Push-Schlüssel kopiert! Jetzt bei Vercel einfügen.');
+        }
+
+        setInterval(() => {
+            secondsLeft--;
+            if (secondsLeft <= 0) {
+                secondsLeft = 5;
+                loadData();
+            }
+            document.getElementById('countdown').innerText = secondsLeft + 's';
+        }, 1000);
+
+        renderNav();
+        loadData();
+    </script>
+</body>
+</html>
